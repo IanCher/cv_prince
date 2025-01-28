@@ -115,7 +115,7 @@ class ExpectationMaximisationGMM:
             Computed as sum_i logP(x_i)
         """
 
-        join_probs = self.compute_joint_prob(samples)
+        join_probs = self.compute_join_prob(samples)
         evidences = np.sum(join_probs, axis=-1)  # (N,)
 
         return np.log(evidences).sum()
@@ -137,7 +137,7 @@ class ExpectationMaximisationGMM:
             Shape (N, K) where N is the number of samples and K the number of components
         """
 
-        join_probs = self.compute_joint_prob(samples)
+        join_probs = self.compute_join_prob(samples)
         evidences = np.sum(join_probs, axis=-1, keepdims=True)  # (N, 1)
         posteriors = join_probs / evidences  # (N, K)
 
@@ -162,8 +162,8 @@ class ExpectationMaximisationGMM:
         self.update_means(samples, posteriors, scaled_w)
         self.update_covs(samples, posteriors, scaled_w)
 
-    def compute_joint_prob(self, samples: np.ndarray) -> np.ndarray:
-        """Compute the joint probability P(x_i, h_i) = P(x_i|h_i) * P(hi)
+    def compute_join_prob(self, samples: np.ndarray) -> np.ndarray:
+        """Compute the join probability P(x_i, h_i) = P(x_i|h_i) * P(hi)
 
         Parameters
         ----------
@@ -172,8 +172,8 @@ class ExpectationMaximisationGMM:
 
         Returns
         -------
-        joint_prob: np.ndarray
-            Shape (N, K) indicating the joint probability for each pair (x_i, h_i)
+        join_prob: np.ndarray
+            Shape (N, K) indicating the join probability for each pair (x_i, h_i)
         """
 
         det_covs_root = np.sqrt(np.linalg.det(self.covs))  # (K,)
@@ -237,9 +237,9 @@ class ExpectationMaximisationGMM:
         if not self.is_fitted:
             raise ValueError("GMM has not been fitted, cannot make predictions.")
 
-        joint_probs = self.compute_joint_prob(samples)  # (N, K)
+        join_probs = self.compute_join_prob(samples)  # (N, K)
 
-        return np.argmax(joint_probs, axis=1)
+        return np.argmax(join_probs, axis=1)
 
     def initialise_params(self, samples: np.ndarray) -> None:
         """Naive initialisation for the parameters

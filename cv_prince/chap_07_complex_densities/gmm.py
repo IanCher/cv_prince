@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from functools import cached_property
 import numpy as np
 from tqdm import tqdm
-from .gaussians import GaussParams
+from .gaussians import Gaussian
 
 
 @dataclass
@@ -15,41 +15,41 @@ class GMMSampler:
     ----------
     weights: tuple[float]
         The weights for each gaussian component of the GMM. Must sum to 1.
-    gaussian_params: tuple[GaussParams]
+    gaussians: tuple[Gaussians]
         The gaussian parameters associated with each component. Must have the same
         length as weights, such that
 
-        P(x) = sum weights[i] * Norm(mean=gauss_params[i].mean, cov=gauss_params[i].cov)
+        P(x) = sum_i weights[i] * Norm(mean=gaussians[i].mean, cov=gaussians[i].cov)
     """
 
     weights: tuple[float]
-    gaussians_params: tuple[GaussParams]
+    gaussians: tuple[Gaussian]
 
     def __post_init__(self):
-        assert len(self.weights) == len(self.gaussians_params), (
+        assert len(self.weights) == len(self.gaussians), (
             f"{len(self.weights)} weights were provided, "
-            f"but {len(self.gaussians_params)} gaussians parameters set."
+            f"but {len(self.gaussians)} gaussians parameters set."
         )
 
         if not np.isclose(sum(self.weights), 1):
             raise ValueError("The weights of the GMM components must sum to 1.")
 
-    def sample_points(self, n: int = 1, seed: float | None = None) -> tuple[np.ndarray]:
+    def sample(
+        self,
+        n: int = 1,
+        seed: float | None = None,
+        rng: np.random.Generator | None = None,
+    ) -> tuple[np.ndarray]:
         """Sample n points from the gaussian mixture model"""
 
-        rng = np.random.default_rng(seed=seed)
+        if rng is None:
+            rng = np.random.default_rng(seed=seed)
 
         hidden_samples = rng.multinomial(n, self.weights)
 
         return [
-            rng.multivariate_normal(
-                mean=gaussian_params.mean,
-                cov=gaussian_params.cov,
-                size=ncomponent_samples,
-            )
-            for (ncomponent_samples, gaussian_params) in zip(
-                hidden_samples, self.gaussians_params
-            )
+            gaussian.sample(n=ncomponent_samples, rng=rng)
+            for (ncomponent_samples, gaussian) in zip(hidden_samples, self.gaussians)
         ]
 
 

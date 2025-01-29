@@ -23,3 +23,15 @@ class Gaussian:
             rng = np.random.default_rng(seed=seed)
 
         return rng.multivariate_normal(mean=self.mean, cov=self.cov, size=n)
+
+    def mahalanobis_dist(self, samples: np.ndarray):
+        """Compute the Mahalanobis distance of samples to gaussian"""
+
+        inv_covs = np.linalg.inv(self.cov)  # (D, D)
+
+        x_mu = samples - self.mean[np.newaxis, :]  # (N, D)
+        x_mu_sq = x_mu[:, np.newaxis, :] @ inv_covs[np.newaxis, ...]  # (N, 1, D)
+        x_mu_sq = x_mu_sq @ x_mu[..., np.newaxis]  # (N, 1, 1)
+        x_mu_sq = x_mu_sq[..., 0, 0]  # (N,)
+
+        return np.sqrt(x_mu_sq)

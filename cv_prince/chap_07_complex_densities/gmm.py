@@ -4,14 +4,7 @@ from dataclasses import dataclass
 from functools import cached_property
 import numpy as np
 from tqdm import tqdm
-
-
-@dataclass
-class GaussParams:
-    """Parameters used to generate multivariate gaussian distribution"""
-
-    mean: np.ndarray
-    cov: np.ndarray
+from .gaussians import GaussParams
 
 
 @dataclass

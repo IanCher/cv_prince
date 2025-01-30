@@ -183,7 +183,7 @@ class ExpectationMaximisationStudent:
             self.df = df_init + res[0] * dir_init
         else:
             warnings.warn(
-                "Line search did not converge, keeping the same nu parameter."
+                "Line search did not converge, keeping the same df parameter."
             )
 
     def compute_scaled_dist_to_mean(self, samples: np.ndarray) -> np.ndarray:
@@ -217,5 +217,5 @@ class ExpectationMaximisationStudent:
                 "GMM with the following parameters \n"
                 f"* mean: \n{self.mean} \n\n"
                 f"* cov : \n{self.cov} \n\n"
-                f"* nu  : \n{self.df} \n"
+                f"* df  : \n{self.df} \n"
             )

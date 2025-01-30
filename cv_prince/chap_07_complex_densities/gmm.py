@@ -104,8 +104,8 @@ class ExpectationMaximisationGMM:
 
         Returns
         -------
-        log likelihood: float
-            Computed as sum_i logP(x_i)
+        float
+            log likelihood computed as sum_i logP(x_i)
         """
 
         join_probs = self.compute_join_prob(samples)
@@ -125,7 +125,7 @@ class ExpectationMaximisationGMM:
 
         Returns
         -------
-        posteriors: np.ndarray
+        np.ndarray
             P(h_i | x_i, theta^(t)), posteriors over all samples and components.
             Shape (N, K) where N is the number of samples and K the number of components
         """
@@ -165,7 +165,7 @@ class ExpectationMaximisationGMM:
 
         Returns
         -------
-        join_prob: np.ndarray
+        np.ndarray
             Shape (N, K) indicating the join probability for each pair (x_i, h_i)
         """
 
@@ -223,7 +223,7 @@ class ExpectationMaximisationGMM:
 
         Returns
         -------
-        label: np.ndarray
+        np.ndarray
             Integer array of shape (N,) with taking values in {0, 1, ..., K-1}
             where K is the number Gaussian components
         """

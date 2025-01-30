@@ -69,9 +69,9 @@ class ExpectationMaximisationStudent:
         samples: np.ndarray
             Input samples of shape (N, D) with N the number of sample, D the dimension
         """
+        # pylint: disable=no-member
 
         nsamples = samples.shape[0]
-
         log_px = scipy.special.loggamma((self.df + self.dim) / 2)
         log_px -= scipy.special.loggamma(self.df / 2)
         log_px -= self.dim / 2 * np.log(self.df * np.pi)
@@ -137,6 +137,7 @@ class ExpectationMaximisationStudent:
         exp_logh: np.ndarray
             Shape (N,), E[logh_i] for all samples with h_i following P(h_i|x_i)
         """
+        # pylint: disable=no-member
 
         nsamples = samples.shape[0]
 

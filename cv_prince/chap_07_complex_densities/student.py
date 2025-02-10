@@ -214,7 +214,7 @@ class ExpectationMaximisationStudent:
     def __str__(self):
         with np.printoptions(precision=3):
             return (
-                "GMM with the following parameters \n"
+                "Student distribution with the following parameters \n"
                 f"* mean: \n{self.mean} \n\n"
                 f"* cov : \n{self.cov} \n\n"
                 f"* df  : \n{self.df} \n"

@@ -60,6 +60,8 @@ class ExpectationMaximisationStudent:
 
             obj_t0 = obj_t1
 
+        self.__is_fitted = True
+
     def eval_objective(self, samples: np.ndarray) -> np.ndarray:
         """Compute the object using the current paramters estimate
         The objective is sum_i log P(x_i)

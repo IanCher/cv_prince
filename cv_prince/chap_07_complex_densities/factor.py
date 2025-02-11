@@ -5,6 +5,24 @@ from tqdm import tqdm
 
 
 class ExpectationMaximisationFactor:
+    """Object performing Expectation Maximisation to fit a factor analysis
+
+    Parameters
+    ----------
+    mean: np.ndarray | None
+        Current estimate of the mean, None if EM has not been initialised
+        Shape (D,) with D the data dimension
+    diag_cov: np.ndarray | None
+        Current estimate of the diagonal covariance matrix, None if not initialised
+        Shape (D,) with D the data dimension
+    factor_mtx: np.ndarray | None
+        Current estimate of the factor analysis matrix, None if not initialised
+        Shape (D, K) with D the data dimension and K the number of factors
+    num_factors: int
+        Number K of factor vector, such that factor_mtx is of shape (D, K)
+    dim: int | None
+        Data dimension D, None if EM has not been initialised
+    """
 
     def __init__(self, num_factors: int, seed: int | None = None):
         self.mean: np.ndarray | None = None
@@ -41,7 +59,40 @@ class ExpectationMaximisationFactor:
 
             obj_t0 = obj_t1
 
+        self.__is_fitted = True
+
+    def eval_objective(self, samples: np.ndarray) -> float:
+        """Compute the object using the current paramters estimate
+        The objective is sum_i log P(x_i)
+
+        Parameters
+        ----------
+        samples: np.ndarray
+            Input samples of shape (N, D) with N the number of sample, D the dimension
+        """
+        full_cov = self.full_cov
+
+        det_full_cov = np.linalg.det(full_cov)
+        log_det_full_cov = np.log(det_full_cov)
+
+        x_mu = samples - self.mean[np.newaxis, :]  # (N, D)
+        x_mu_sq = np.linalg.lstsq(full_cov, x_mu.transpose())[0]  # (D, N)
+        x_mu_sq = x_mu_sq.transpose()  # (N, D)
+        x_mu_sq = x_mu[:, np.newaxis, :] @ x_mu_sq[..., np.newaxis]
+        x_mu_sq = x_mu_sq[:, 0, 0]  # (N,)
+
+        num_samples = samples.shape[0]
+
+        return -1 / 2 * (num_samples * log_det_full_cov + x_mu_sq.sum())
+
     def initialise_params(self, samples: np.ndarray) -> None:
+        """Initialise all the parameters from data
+
+        Parameters
+        ----------
+        samples: np.ndarray
+            Input samples of shape (N, D) with N the number of sample, D the dimension
+        """
         num_samples = samples.shape[0]
         self.dim = samples.shape[1]
 
@@ -55,15 +106,29 @@ class ExpectationMaximisationFactor:
         self.factor_mtx = np.eye(self.dim, self.num_factors)
 
     def perform_e_step(self, samples: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-        qh_cov = self.factor_mtx.transpose() @ np.diag(1 / self.diag_cov)
-        qh_cov = qh_cov @ self.factor_mtx
-        qh_cov = qh_cov + np.eye(self.num_factors)
-        qh_cov = np.linalg.inv(qh_cov)
+        """Performs the E-Step in the EM algorithm
+
+        Parameters
+        ----------
+        samples: np.ndarray
+            Input samples of shape (N, D) with N the number of sample, D the dimension
+
+        Returns
+        -------
+        tuple[np.ndarray, np.ndarray]
+            The mean and covariance of the probability distribution qh of the hidden
+            variables, used to compute the expectation (follows a normal distribution).
+            Shape (N, K) and (K, K) respectively (one distribution per sample)
+        """
+        inv_diag_cov = np.diag(1 / self.diag_cov)
+
+        qh_cov = self.factor_mtx.transpose() @ inv_diag_cov  # (K, D)
+        qh_cov = qh_cov @ self.factor_mtx  # (K, K)
+        qh_cov = qh_cov + np.eye(self.num_factors)  # (K, K)
+        qh_cov = np.linalg.inv(qh_cov)  # (K, K)
 
         qh_mean = samples - self.mean[np.newaxis, :]  # (N, D)
-        qh_mean = (
-            np.diag(1 / self.diag_cov)[np.newaxis, ...] @ qh_mean[..., np.newaxis]
-        )  # (N, D, 1)
+        qh_mean = inv_diag_cov[np.newaxis, ...] @ qh_mean[..., np.newaxis]  # (N, D, 1)
         qh_mean = self.factor_mtx.transpose()[np.newaxis, ...] @ qh_mean  # (N, K, 1)
         qh_mean = qh_cov[np.newaxis, ...] @ qh_mean  # (N, K, 1)
         qh_mean = qh_mean[..., 0]  # (N, K)
@@ -73,6 +138,19 @@ class ExpectationMaximisationFactor:
     def perform_m_step(
         self, samples: np.ndarray, qh_mean: np.ndarray, qh_cov: np.ndarray
     ) -> None:
+        """Performs the M-Step in the EM algorithm
+
+        Parameters
+        ----------
+        samples: np.ndarray
+            Input samples of shape (N, D) with N the number of sample, D the dimension
+        qh_mean: np.ndarray
+            Mean of the probability distribution over hidden variables used to compute
+            expectation. Shape (N, K) (one distribution per sample)
+        qh_cov: np.ndarray
+            Covariance of the probability distribution over hidden variables used to
+            compute expectation. Shape (K, K)
+        """
         num_samples = samples.shape[0]
 
         x_mu = samples - self.mean[np.newaxis, :]  # (N, D)
@@ -94,30 +172,19 @@ class ExpectationMaximisationFactor:
         inter_cov = inter_cov.sum(axis=0)
         self.diag_cov = 1 / num_samples * np.diag(inter_cov)
 
-    def eval_objective(self, samples: np.ndarray) -> float:
-        full_cov = self.factor_mtx @ self.factor_mtx.transpose() + np.diag(
-            self.diag_cov
-        )
-        det_full_cov = np.linalg.det(full_cov)
-        log_det_full_cov = np.log(det_full_cov)
-
-        x_mu = samples - self.mean[np.newaxis, :]  # (N, D)
-        x_mu_sq = (
-            x_mu[:, np.newaxis, :] @ np.linalg.inv(full_cov)[np.newaxis, ...]
-        )  # (N, 1, D)
-        x_mu_sq = x_mu_sq @ x_mu[..., np.newaxis]  # (N, 1, 1)
-        x_mu_sq = x_mu_sq[:, 0, 0]  # (N,)
-
-        num_samples = samples.shape[0]
-
-        return -1 / 2 * (num_samples * log_det_full_cov + x_mu_sq.sum())
+    @property
+    def full_cov(self) -> np.ndarray:
+        """Returns the full covariance matrix of the distribution"""
+        return self.factor_mtx @ self.factor_mtx.transpose() + np.diag(self.diag_cov)
 
     @property
     def rng(self) -> np.random.Generator:
+        """Access the random generator"""
         return self.__rng
 
     @property
     def is_fitted(self) -> bool:
+        """Checks whether the model has been fitted or not"""
         return self.__is_fitted
 
     def __str__(self):

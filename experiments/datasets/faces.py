@@ -1,6 +1,6 @@
 """Classes and functions to manipulate face dataset"""
 
-from dataclasses import dataclass
+from dataclasses import astuple, dataclass
 from functools import cached_property
 from pathlib import Path
 
@@ -79,6 +79,8 @@ class FaceAnnotation:
         top_left_corner = bbox_ellipsis_corners.min(axis=0).astype(int)
         bot_right_corner = bbox_ellipsis_corners.max(axis=0).astype(int)
         bbox_corners = np.concatenate([top_left_corner, bot_right_corner])
+        bbox_corners = np.maximum(0, bbox_corners)
+
         return bbox_corners.flatten().tolist()
 
     def __rotate(self, points: np.ndarray):
@@ -110,18 +112,34 @@ class FaceImage:
     def read_image(self) -> Image.Image:
         return Image.open(self.file_path)
 
+    def get_tallest_face(self) -> int:
+        tallest_face = 0
+        tallest_face_id = None
+
+        for face_id, face in self.faces.items():
+            (_, top_left_y, _, bot_right_y) = face.bbox
+            face_h = bot_right_y - top_left_y
+
+            if face_h > tallest_face:
+                tallest_face = face_h
+                tallest_face_id = face_id
+
+        return tallest_face_id
+
     def crop_face_img(self, face_id: int) -> Image.Image:
         img_w, img_h = self.size
 
         (top_left_x, top_left_y, bot_right_x, bot_right_y) = self.faces[face_id].bbox
+        bot_right_x = min(bot_right_x, img_w)
+        bot_right_y = min(bot_right_y, img_h)
 
         face_w = bot_right_x - top_left_x
         face_h = bot_right_y - top_left_y
 
-        max_dim = max(face_w, face_h)
+        cropped_dim = min(img_w, img_h, max(face_w, face_h))
 
-        num_extra_cols = max_dim - face_w
-        num_extra_rows = max_dim - face_h
+        num_extra_cols = min(img_w - face_w, cropped_dim - face_w)
+        num_extra_rows = min(img_h - face_h, cropped_dim - face_h)
 
         top_left_x = top_left_x - num_extra_cols // 2
         bot_right_x = bot_right_x + num_extra_cols // 2
@@ -159,11 +177,16 @@ class FaceImage:
     ):
 
         img_w, img_h = self.size
+        img = self.read_image()
 
-        faces = [Rectangle(*face.bbox) for face in self.faces.values()]
-        widest_face = max(map(lambda x: x.width, faces))
-        highest_face = max(map(lambda x: x.height, faces))
-        non_face_size = min(highest_face, widest_face)
+        excluded_areas = [Rectangle(*face.bbox) for face in self.faces.values()]
+        for face in excluded_areas:
+            face.bot_right_x = min(face.bot_right_x, img_w)
+            face.bot_right_y = min(face.bot_right_y, img_h)
+
+        widest_face = max(map(lambda x: x.width, excluded_areas))
+        highest_face = max(map(lambda x: x.height, excluded_areas))
+        non_face_size = min(img_w, img_h, highest_face, widest_face)
 
         if rng is None:
             rng = np.random.default_rng(seed=seed)
@@ -172,7 +195,7 @@ class FaceImage:
         while True:
             for _ in range(max_trials):
                 start_x, start_y = rng.integers(
-                    [0, 0], [img_w - non_face_size, img_h - non_face_size]
+                    [0, 0], [img_w - non_face_size + 1, img_h - non_face_size + 1]
                 )
                 proposal = Rectangle(
                     top_left_x=start_x,
@@ -181,19 +204,17 @@ class FaceImage:
                     bot_right_y=start_y + non_face_size,
                 )
 
-                overlap = max(
-                    map(lambda x: proposal.overlap_ratio(x), faces + found_instances)
-                )
+                overlap = max(map(proposal.overlap_ratio, excluded_areas))
 
                 if overlap < max_overlap:
-                    found_instances.append(proposal)
+                    excluded_areas.append(proposal)
+                    found_instances.append(img.crop(astuple(proposal)))
 
                 if num_instances is not None and len(found_instances) == num_instances:
                     return found_instances
 
-            print("Reducing non face size")
             non_face_size = int(0.9 * non_face_size)
-            if non_face_size < 0.5 * min(highest_face, widest_face):
+            if non_face_size < 0.25 * min(highest_face, widest_face):
                 return found_instances
 
     def show_annotated_image(self):

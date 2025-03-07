@@ -26,18 +26,42 @@ class Gaussian:
         return self.mean.shape[0]
 
     @cached_property
-    def inv_cov(self) -> np.ndarray:
+    def precision_mtx(self) -> np.ndarray:
         """Compute and store inverse covariance matrix"""
-        return np.linalg.inv(self.cov)
+
+        return self.cov_cholesky_inv.T @ self.cov_cholesky_inv
+
+    @cached_property
+    def cov_cholesky_decomp(self) -> np.ndarray:
+        """Compute the cholesky decomposition"""
+        return np.linalg.cholesky(self.cov)
+
+    @cached_property
+    def cov_cholesky_inv(self) -> np.ndarray:
+        """Compute the inverse of the cholesky decomposition"""
+        return np.linalg.solve(self.cov_cholesky_decomp, np.eye(self.num_vars))
 
     @cached_property
     def normalization_factor(self) -> float:
         """Compute the probability normalisation factor"""
 
         two_pi_root = (2 * np.pi) ** (self.num_vars / 2)
-        det_cov_root = np.sqrt(np.linalg.det(self.cov))
 
-        return 1 / (two_pi_root * det_cov_root)
+        return 1 / (two_pi_root * self.det_cov_cholesky_decomp)
+
+    @cached_property
+    def log_normalization_factor(self) -> float:
+        """Computer and store normalization factor for log pdf"""
+
+        log_two_pi_root = -self.num_vars / 2 * np.log(2 * np.pi)
+        log_det_cov_root = -np.log(np.diag(self.cov_cholesky_decomp)).sum()
+
+        return log_two_pi_root + log_det_cov_root
+
+    @cached_property
+    def det_cov_cholesky_decomp(self) -> float:
+        """Compute the determinant of the covariance matrix"""
+        return np.prod(np.diag(self.cov_cholesky_decomp))
 
     def sample(
         self,
@@ -60,6 +84,14 @@ class Gaussian:
 
         return self.normalization_factor * np.exp(-0.5 * samples_qform)
 
+    def log_pdf(self, samples: np.ndarray) -> np.ndarray:
+        """Compute the log probability of observed samples"""
+
+        samples_centered = self.__center_samples(samples)  # (N, D)
+        samples_qform = self.__quadratic_form(samples_centered)  # (N,)
+
+        return self.log_normalization_factor - 1 / 2 * samples_qform
+
     def mahalanobis_dist(self, samples: np.ndarray):
         """Compute the Mahalanobis distance of samples to gaussian"""
 
@@ -75,7 +107,8 @@ class Gaussian:
     def __quadratic_form(self, samples: np.ndarray) -> np.ndarray:
         """Compute x^T @ inv_cov @ x"""
 
-        x_mu_sq = samples[:, np.newaxis, :] @ self.inv_cov[np.newaxis, ...]  # (N, 1, D)
-        x_mu_sq = x_mu_sq @ samples[..., np.newaxis]  # (N, 1, 1)
+        quad_form = self.cov_cholesky_inv[np.newaxis, ...] @ samples[..., np.newaxis]
+        quad_form = self.cov_cholesky_inv.T[np.newaxis, ...] @ quad_form
+        quad_form = samples[:, np.newaxis, :] @ quad_form
 
-        return x_mu_sq[..., 0, 0]  # (N,)
+        return quad_form[..., 0, 0]  # (N,)

@@ -92,22 +92,18 @@ class FaceAnnotation:
 
 
 class FaceImage:
-    def __init__(self, file_path: Path, num_faces: int):
+    def __init__(self, file_path: Path, faces: list[FaceAnnotation]):
         self.file_path = file_path
-        self.num_faces = num_faces
-        self.faces: dict[int, FaceAnnotation] = {}
+        self.faces = faces
+        self.num_faces = len(faces)
 
     @cached_property
     def size(self):
         return self.read_image().size  # (width, height)
 
-    def initialise_rng(self, seed: int | None = None):
-        print("Initialising rng")
-        self.__rng = np.random.default_rng(seed=seed)
-
-    def add_face(self, anno: FaceAnnotation):
-        face_id = len(self.faces)
-        self.faces[face_id] = anno
+    # def add_face(self, anno: FaceAnnotation):
+    #     face_id = len(self.faces)
+    #     self.faces[face_id] = anno
 
     def read_image(self) -> Image.Image:
         return Image.open(self.file_path)
@@ -164,7 +160,7 @@ class FaceImage:
         )
 
     def get_all_croped_faces(self):
-        for i in self.faces.keys():
+        for i in range(self.num_faces):
             yield self.crop_face_img(i)
 
     def crop_non_face_img(
@@ -172,21 +168,25 @@ class FaceImage:
         num_instances: int | None = None,
         max_trials: int = 100,
         max_overlap: float = 0.1,
+        min_allowed_size_proportion: float = 0.85,
         seed: int | None = None,
         rng: np.random.Generator | None = None,
-    ):
+    ) -> list[Image.Image]:
 
         img_w, img_h = self.size
         img = self.read_image()
 
-        excluded_areas = [Rectangle(*face.bbox) for face in self.faces.values()]
+        excluded_areas = [Rectangle(*face.bbox) for face in self.faces]
         for face in excluded_areas:
             face.bot_right_x = min(face.bot_right_x, img_w)
             face.bot_right_y = min(face.bot_right_y, img_h)
 
         widest_face = max(map(lambda x: x.width, excluded_areas))
         highest_face = max(map(lambda x: x.height, excluded_areas))
-        non_face_size = min(img_w, img_h, highest_face, widest_face)
+
+        default_non_face_size = min(img_w, img_h, highest_face, widest_face)
+        min_allowed_non_face_size = min_allowed_size_proportion * default_non_face_size
+        non_face_size = default_non_face_size
 
         if rng is None:
             rng = np.random.default_rng(seed=seed)
@@ -214,22 +214,22 @@ class FaceImage:
                     return found_instances
 
             non_face_size = int(0.9 * non_face_size)
-            if non_face_size < 0.25 * min(highest_face, widest_face):
+            if non_face_size < min_allowed_non_face_size:
                 return found_instances
 
     def show_annotated_image(self):
         face_img = self.read_image().convert("RGBA")
         drawing = ImageDraw.Draw(face_img)
 
-        for face_anno in self.faces.values():
-            drawing.line(face_anno.major_ax_bounds, fill="blue", width=2)
-            drawing.line(face_anno.minor_ax_bounds, fill="blue", width=2)
+        for face in self.faces:
+            drawing.line(face.major_ax_bounds, fill="blue", width=2)
+            drawing.line(face.minor_ax_bounds, fill="blue", width=2)
 
             ellipse_img = Image.new("RGBA", face_img.size, (0, 0, 0, 0))
             ellipse_draw = ImageDraw.Draw(ellipse_img)
-            ellipse_draw.ellipse(face_anno.ellipsis_bbox, outline="blue", width=2)
+            ellipse_draw.ellipse(face.ellipsis_bbox, outline="blue", width=2)
             ellipse_img = ellipse_img.rotate(
-                np.rad2deg(-face_anno.angle), center=face_anno.center.tolist()
+                np.rad2deg(-face.angle), center=face.center.tolist()
             )
             face_img.paste(ellipse_img, (0, 0), ellipse_img)
 

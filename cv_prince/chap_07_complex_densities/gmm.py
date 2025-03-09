@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from functools import cached_property
+from typing import Generator
 from warnings import warn
 import numpy as np
 from tqdm import tqdm
@@ -50,6 +51,19 @@ class GMMSampler:
 
         return len(self.weights)
 
+    @property
+    def num_vars(self) -> int:
+        """Number of variables in each MVG component"""
+
+        return self.gaussians[0].num_vars
+
+    @property
+    def components(self) -> Generator[tuple[float, Gaussian], None, None]:
+        """Iterates over the components"""
+
+        for i in range(self.num_components):
+            yield (self.weights[i], self.gaussians[i])
+
     def sample(
         self,
         n: int = 1,
@@ -75,6 +89,18 @@ class GMMSampler:
             self.pdf_contrib(i, samples) for i in range(self.num_components)
         ]
         return np.sum(weighted_pdf_per_component, axis=0)
+
+    def log_pdf(self, samples: np.ndarray) -> np.ndarray:
+        """Compute the log pdf for the requested samples"""
+
+        log_pdf_contribs = np.array(
+            [self.log_pdf_contrib(i, samples) for i in range(self.num_components)]
+        )
+        max_log_pdf_contrib = np.max(log_pdf_contribs, axis=0, keepdims=True)
+
+        log_pdf_contribs -= max_log_pdf_contrib
+
+        return max_log_pdf_contrib[0, :] + np.log(np.exp(log_pdf_contribs).sum(axis=0))
 
     def pdf_contrib(self, component_idx: int, samples: np.ndarray) -> np.ndarray:
         """Computes pdf contribution of specific component for the requested samples"""

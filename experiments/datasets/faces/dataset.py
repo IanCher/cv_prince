@@ -10,7 +10,7 @@ from experiments.datasets.faces.utils import FaceAnnotation, FaceImage
 
 
 class FaceLabel(Enum):
-    non_face: int = 0
+    other: int = 0
     face: int = 1
 
 
@@ -60,7 +60,7 @@ class FaceDataset:
         if idx < self.num_face_imgs:
             return self.faces_arr[idx, :], FaceLabel.face
 
-        return self.faces_arr[idx - self.num_face_imgs, :], FaceLabel.non_face
+        return self.faces_arr[idx - self.num_face_imgs, :], FaceLabel.other
 
     @property
     def num_face_imgs(self) -> int:

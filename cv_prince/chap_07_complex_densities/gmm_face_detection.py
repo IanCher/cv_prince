@@ -19,6 +19,7 @@ class GMMFaceDetectorParams:
     ncomponents_faces: int = 10
     ncomponents_others: int = 10
     em_max_iter: int = 1000
+    thresh: float = 0.5
 
 
 class GMMFaceDetector:
@@ -45,6 +46,13 @@ class GMMFaceDetector:
     def predict(self, data: np.ndarray) -> np.ndarray:
         """Predict if the image represents a face or not"""
 
+        faces_score = self.score(data)
+
+        return np.where(faces_score > self.thresh, FaceLabel.face, FaceLabel.other)
+
+    def score(self, data: np.ndarray) -> np.ndarray:
+        """Compute the score of the data representing a face"""
+
         faces_log_likelihood = self.gmm_faces.log_pdf(data)
         others_log_likelihood = self.gmm_others.log_pdf(data)
 
@@ -54,9 +62,7 @@ class GMMFaceDetector:
             + np.exp(others_log_likelihood - max_likelihood)
         )
 
-        faces_proba = np.exp(faces_log_likelihood - lse)
-
-        return np.where(faces_proba > 0.5, FaceLabel.face, FaceLabel.other)
+        return np.exp(faces_log_likelihood - lse)
 
     def save(self, filepath: Path):
         """Saves model in filepath"""
@@ -77,6 +83,18 @@ class GMMFaceDetector:
         """Access random seed from params"""
 
         return self.params.seed
+
+    @property
+    def thresh(self) -> float:
+        """Access prediction threshold from params"""
+
+        return self.params.thresh
+
+    @thresh.setter
+    def thresh(self, val):
+        """Set the prediction threshold"""
+
+        self.params.thresh = val
 
     @property
     def ncomponents_faces(self) -> int:

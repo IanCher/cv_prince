@@ -11,6 +11,14 @@ from experiments.geometry.rectangles import Rectangle
 
 
 @dataclass
+class OtherSelectionParams:
+    max_overlap: float = 0.15
+    min_proportion: float = 0.8
+    num_instances: int | None = None
+    max_trials: int = 100
+
+
+@dataclass
 class FaceAnnotation:
     major_ax_radius: float
     minor_ax_radius: float
@@ -92,18 +100,125 @@ class FaceAnnotation:
 
 
 class FaceImage:
-    def __init__(self, file_path: Path, faces: list[FaceAnnotation]):
+    def __init__(
+        self,
+        file_path: Path,
+        face_annotations: list[FaceAnnotation],
+        other_selection_params: OtherSelectionParams = OtherSelectionParams(),
+        rng: np.random.Generator | None = None,
+        seed: int | None = None,
+    ):
         self.file_path = file_path
-        self.faces = faces
-        self.num_faces = len(faces)
+        self.size = self.read_image().size
 
-    @cached_property
-    def size(self):
-        return self.read_image().size  # (width, height)
+        self.face_annotations = face_annotations
+        self.faces = self.__get_faces_areas()
+        self.num_faces = len(face_annotations)
 
-    # def add_face(self, anno: FaceAnnotation):
-    #     face_id = len(self.faces)
-    #     self.faces[face_id] = anno
+        self.__rng = rng if rng is not None else np.random.default_rng(seed)
+
+        self.other_selection_params = other_selection_params
+        self.others = self.__get_others_areas()
+        self.num_others = len(self.others)
+
+    @property
+    def name(self) -> str:
+        return "/".join(str(self.file_path).split("/")[-5:]).removesuffix(".jpg")
+
+    def __get_faces_areas(self) -> list[Rectangle]:
+        img_w, img_h = self.size
+
+        faces_areas = []
+        for face_annotation in self.face_annotations:
+            (top_left_x, top_left_y, bot_right_x, bot_right_y) = face_annotation.bbox
+
+            bot_right_x = min(bot_right_x, img_w)
+            bot_right_y = min(bot_right_y, img_h)
+
+            face_w = bot_right_x - top_left_x
+            face_h = bot_right_y - top_left_y
+
+            cropped_dim = min(img_w, img_h, max(face_w, face_h))
+
+            num_extra_cols = min(img_w - face_w, cropped_dim - face_w)
+            num_extra_rows = min(img_h - face_h, cropped_dim - face_h)
+
+            top_left_x = top_left_x - num_extra_cols // 2
+            bot_right_x = bot_right_x + num_extra_cols // 2
+            if top_left_x < 0:
+                bot_right_x -= top_left_x
+                top_left_x = 0
+            elif bot_right_x > img_w - 1:
+                top_left_x -= bot_right_x - img_w + 1
+                bot_right_x = img_w - 1
+
+            top_left_y = top_left_y - num_extra_rows // 2
+            bot_right_y = bot_right_y + num_extra_rows // 2
+            if top_left_y < 0:
+                bot_right_y -= top_left_y
+                top_left_y = 0
+            elif bot_right_y > img_h - 1:
+                top_left_y -= bot_right_y - img_h + 1
+                bot_right_y = img_h - 1
+
+            faces_areas.append(
+                Rectangle(
+                    top_left_x=top_left_x,
+                    top_left_y=top_left_y,
+                    bot_right_x=bot_right_x,
+                    bot_right_y=bot_right_y,
+                )
+            )
+
+        return faces_areas
+
+    def __get_others_areas(self) -> list[Rectangle]:
+        img_w, img_h = self.size
+
+        excluded_areas = [Rectangle(*face.bbox) for face in self.face_annotations]
+        for face in excluded_areas:
+            face.bot_right_x = min(face.bot_right_x, img_w)
+            face.bot_right_y = min(face.bot_right_y, img_h)
+
+        widest_face = max(map(lambda x: x.width, excluded_areas))
+        highest_face = max(map(lambda x: x.height, excluded_areas))
+
+        default_other_size = min(img_w, img_h, highest_face, widest_face)
+        min_allowed_other_size = (
+            self.other_selection_params.min_proportion * default_other_size
+        )
+        other_size = default_other_size
+
+        found_instances = []
+        while True:
+            for _ in range(self.other_selection_params.max_trials):
+                start_x, start_y = self.__rng.integers(
+                    [0, 0], [img_w - other_size + 1, img_h - other_size + 1]
+                )
+                proposal = Rectangle(
+                    top_left_x=start_x,
+                    top_left_y=start_y,
+                    bot_right_x=start_x + other_size,
+                    bot_right_y=start_y + other_size,
+                )
+
+                overlap = max(
+                    map(proposal.overlap_ratio, excluded_areas + found_instances)
+                )
+
+                if overlap < self.other_selection_params.max_overlap:
+                    found_instances.append(proposal)
+
+                if (
+                    self.other_selection_params.num_instances is not None
+                    and len(found_instances)
+                    == self.other_selection_params.num_instances
+                ):
+                    return found_instances
+
+            other_size = int(0.9 * other_size)
+            if other_size < min_allowed_other_size:
+                return found_instances
 
     def read_image(self) -> Image.Image:
         return Image.open(self.file_path)
@@ -112,7 +227,7 @@ class FaceImage:
         tallest_face = 0
         tallest_face_id = None
 
-        for face_id, face in self.faces.items():
+        for face_id, face in self.face_annotations.items():
             (_, top_left_y, _, bot_right_y) = face.bbox
             face_h = bot_right_y - top_left_y
 
@@ -123,105 +238,22 @@ class FaceImage:
         return tallest_face_id
 
     def crop_face_img(self, face_id: int) -> Image.Image:
-        img_w, img_h = self.size
+        return self.read_image().crop(astuple(self.faces[face_id]))
 
-        (top_left_x, top_left_y, bot_right_x, bot_right_y) = self.faces[face_id].bbox
-        bot_right_x = min(bot_right_x, img_w)
-        bot_right_y = min(bot_right_y, img_h)
+    def crop_all_faces_img(self) -> list[Image.Image]:
+        return [self.crop_face_img(i) for i in range(self.num_faces)]
 
-        face_w = bot_right_x - top_left_x
-        face_h = bot_right_y - top_left_y
+    def crop_other_img(self, other_id) -> list[Image.Image]:
+        return self.read_image().crop(astuple(self.others[other_id]))
 
-        cropped_dim = min(img_w, img_h, max(face_w, face_h))
-
-        num_extra_cols = min(img_w - face_w, cropped_dim - face_w)
-        num_extra_rows = min(img_h - face_h, cropped_dim - face_h)
-
-        top_left_x = top_left_x - num_extra_cols // 2
-        bot_right_x = bot_right_x + num_extra_cols // 2
-        if top_left_x < 0:
-            bot_right_x -= top_left_x
-            top_left_x = 0
-        elif bot_right_x > img_w - 1:
-            top_left_x -= bot_right_x - img_w + 1
-            bot_right_x = img_w - 1
-
-        top_left_y = top_left_y - num_extra_rows // 2
-        bot_right_y = bot_right_y + num_extra_rows // 2
-        if top_left_y < 0:
-            bot_right_y -= top_left_y
-            top_left_y = 0
-        elif bot_right_y > img_h - 1:
-            top_left_y -= bot_right_y - img_h + 1
-            bot_right_y = img_h - 1
-
-        return self.read_image().crop(
-            (top_left_x, top_left_y, bot_right_x, bot_right_y)
-        )
-
-    def get_all_croped_faces(self):
-        for i in range(self.num_faces):
-            yield self.crop_face_img(i)
-
-    def crop_non_face_img(
-        self,
-        num_instances: int | None = None,
-        max_trials: int = 100,
-        max_overlap: float = 0.1,
-        min_allowed_size_proportion: float = 0.85,
-        seed: int | None = None,
-        rng: np.random.Generator | None = None,
-    ) -> list[Image.Image]:
-
-        img_w, img_h = self.size
-        img = self.read_image()
-
-        excluded_areas = [Rectangle(*face.bbox) for face in self.faces]
-        for face in excluded_areas:
-            face.bot_right_x = min(face.bot_right_x, img_w)
-            face.bot_right_y = min(face.bot_right_y, img_h)
-
-        widest_face = max(map(lambda x: x.width, excluded_areas))
-        highest_face = max(map(lambda x: x.height, excluded_areas))
-
-        default_non_face_size = min(img_w, img_h, highest_face, widest_face)
-        min_allowed_non_face_size = min_allowed_size_proportion * default_non_face_size
-        non_face_size = default_non_face_size
-
-        if rng is None:
-            rng = np.random.default_rng(seed=seed)
-
-        found_instances = []
-        while True:
-            for _ in range(max_trials):
-                start_x, start_y = rng.integers(
-                    [0, 0], [img_w - non_face_size + 1, img_h - non_face_size + 1]
-                )
-                proposal = Rectangle(
-                    top_left_x=start_x,
-                    top_left_y=start_y,
-                    bot_right_x=start_x + non_face_size,
-                    bot_right_y=start_y + non_face_size,
-                )
-
-                overlap = max(map(proposal.overlap_ratio, excluded_areas))
-
-                if overlap < max_overlap:
-                    excluded_areas.append(proposal)
-                    found_instances.append(img.crop(astuple(proposal)))
-
-                if num_instances is not None and len(found_instances) == num_instances:
-                    return found_instances
-
-            non_face_size = int(0.9 * non_face_size)
-            if non_face_size < min_allowed_non_face_size:
-                return found_instances
+    def crop_all_others_img(self) -> list[Image.Image]:
+        return [self.crop_other_img(i) for i in range(self.num_others)]
 
     def show_annotated_image(self):
         face_img = self.read_image().convert("RGBA")
         drawing = ImageDraw.Draw(face_img)
 
-        for face in self.faces:
+        for face in self.face_annotations:
             drawing.line(face.major_ax_bounds, fill="blue", width=2)
             drawing.line(face.minor_ax_bounds, fill="blue", width=2)
 

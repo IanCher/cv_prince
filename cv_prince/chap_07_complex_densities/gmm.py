@@ -311,17 +311,12 @@ class ExpectationMaximisationGMM:
         unnormalized_weights: np.ndarray,
     ) -> None:
         """Update the GMM covariances using the Maximum Likelihood formula"""
-        nsamples = samples.shape[0]
 
         x_mu = samples[:, np.newaxis, :] - self.means[np.newaxis, :, :]  # (N, K, D)
 
         self.covs = np.zeros((self.num_components, self.ndims, self.ndims))
-        for i in range(nsamples):
-            self.covs += (
-                posteriors[i, :, np.newaxis, np.newaxis]
-                * x_mu[i, :, :, np.newaxis]
-                @ x_mu[i, :, np.newaxis, :]
-            )
+        for k in range(self.num_components):
+            self.covs[k, ...] = (posteriors[:, k] * x_mu[:, k, :].T) @ x_mu[:, k, :]
 
         self.covs /= unnormalized_weights[:, np.newaxis, np.newaxis]
         self.covs += 1e-6 * np.eye(self.ndims)[np.newaxis, ...]

@@ -66,6 +66,8 @@ class GMMFaceDetector:
 
     def save(self, filepath: Path):
         """Saves model in filepath"""
+        if not filepath.parent.exists():
+            filepath.parent.mkdir(parents=True)
 
         with open(filepath, "wb") as fid:
             pickle.dump(self.__dict__, fid)

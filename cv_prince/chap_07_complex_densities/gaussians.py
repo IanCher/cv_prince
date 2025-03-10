@@ -107,8 +107,7 @@ class Gaussian:
     def __quadratic_form(self, samples: np.ndarray) -> np.ndarray:
         """Compute x^T @ inv_cov @ x"""
 
-        quad_form = self.cov_cholesky_inv[np.newaxis, ...] @ samples[..., np.newaxis]
-        quad_form = self.cov_cholesky_inv.T[np.newaxis, ...] @ quad_form
-        quad_form = samples[:, np.newaxis, :] @ quad_form
+        quad_form = self.cov_cholesky_inv @ samples[..., np.newaxis]
+        quad_form = np.square(quad_form[..., 0]).sum(axis=1)
 
-        return quad_form[..., 0, 0]  # (N,)
+        return quad_form  # (N,)

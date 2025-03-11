@@ -17,40 +17,44 @@ class Gaussian:
     """Parameters used to generate a gaussian distribution"""
 
     def __init__(self, mean: np.ndarray, cov: np.ndarray):
+        self.cov_cholesky_decomp = np.zeros_like(cov)
+        self.cov_cholesky_inv = np.zeros_like(cov)
+        self.det_cov_cholesky_decomp: float | None = 0.0
+        self.log_normalization_factor: float | None = 0.0
+
         self.mean = mean
         self.cov = cov
+
+    def __setattr__(self, name, value):
+        super().__setattr__(name, value)
+
+        if name == "cov":
+            self.cov_cholesky_decomp = self.compute_cov_cholesky_decomp()
+            self.cov_cholesky_inv = self.compute_cov_cholesky_inv()
+            self.log_normalization_factor = self.compute_log_normalization_factor()
+            self.det_cov_cholesky_decomp = self.compute_det_cov_cholesky_decomp()
 
     @property
     def num_vars(self) -> int:
         """Number of variables in the Multivariate Gaussian"""
         return self.mean.shape[0]
 
-    @cached_property
+    @property
     def precision_mtx(self) -> np.ndarray:
         """Compute and store inverse covariance matrix"""
 
         return self.cov_cholesky_inv.T @ self.cov_cholesky_inv
 
-    @cached_property
-    def cov_cholesky_decomp(self) -> np.ndarray:
+    def compute_cov_cholesky_decomp(self) -> np.ndarray:
         """Compute the cholesky decomposition"""
+
         return np.linalg.cholesky(self.cov)
 
-    @cached_property
-    def cov_cholesky_inv(self) -> np.ndarray:
+    def compute_cov_cholesky_inv(self) -> np.ndarray:
         """Compute the inverse of the cholesky decomposition"""
         return np.linalg.solve(self.cov_cholesky_decomp, np.eye(self.num_vars))
 
-    @cached_property
-    def normalization_factor(self) -> float:
-        """Compute the probability normalisation factor"""
-
-        two_pi_root = (2 * np.pi) ** (self.num_vars / 2)
-
-        return 1 / (two_pi_root * self.det_cov_cholesky_decomp)
-
-    @cached_property
-    def log_normalization_factor(self) -> float:
+    def compute_log_normalization_factor(self) -> float:
         """Computer and store normalization factor for log pdf"""
 
         log_two_pi_root = -self.num_vars / 2 * np.log(2 * np.pi)
@@ -58,8 +62,7 @@ class Gaussian:
 
         return log_two_pi_root + log_det_cov_root
 
-    @cached_property
-    def det_cov_cholesky_decomp(self) -> float:
+    def compute_det_cov_cholesky_decomp(self) -> float:
         """Compute the determinant of the covariance matrix"""
         return np.prod(np.diag(self.cov_cholesky_decomp))
 
@@ -79,10 +82,7 @@ class Gaussian:
     def pdf(self, samples: np.ndarray) -> np.ndarray:
         """Compute the probability of observing samples"""
 
-        samples_centered = self.__center_samples(samples)  # (N, D)
-        samples_qform = self.__quadratic_form(samples_centered)  # (N,)
-
-        return self.normalization_factor * np.exp(-0.5 * samples_qform)
+        return np.exp(self.log_pdf(samples))
 
     def log_pdf(self, samples: np.ndarray) -> np.ndarray:
         """Compute the log probability of observed samples"""

@@ -126,24 +126,12 @@ class ExpectationMaximisationGMM:
         self.weights: np.ndarray | None = None
         self.means: np.ndarray | None = None
         self.covs: np.ndarray | None = None
+        self.gmm: GMMSampler | None = None
 
         self.ndims: int | None = None
 
         self.__rng = np.random.default_rng(seed)
         self.__is_fitted: bool = False
-
-    @property
-    def gmm(self):
-        """Returns a GMM sampler with current parameters"""
-
-        assert self.weights is not None, "EM was not initialised yet"
-
-        return GMMSampler(
-            weights=self.weights,
-            gaussians=[
-                Gaussian(mean=mean, cov=cov) for mean, cov in zip(self.means, self.covs)
-            ],
-        )
 
     def fit(self, samples: np.ndarray, max_iter: int = 1000) -> None:
         """Estimate the parameters of the GMM from samples
@@ -164,6 +152,7 @@ class ExpectationMaximisationGMM:
         for _ in tqdm(range(max_iter)):
             log_posteriors = self.perform_e_step(samples)
             self.perform_m_step(samples, log_posteriors)
+            self.update_gmm()
 
             upper_bound_t1 = self.compute_upper_bound(samples, log_posteriors)
 
@@ -321,6 +310,13 @@ class ExpectationMaximisationGMM:
         self.covs /= unnormalized_weights[:, np.newaxis, np.newaxis]
         self.covs += 1e-6 * np.eye(self.ndims)[np.newaxis, ...]
 
+    def update_gmm(self):
+        """Updates the parameters of the estimated gmm"""
+        self.gmm.weights = self.weights
+        for k in range(self.num_components):
+            self.gmm.gaussians[k].mean = self.means[k]
+            self.gmm.gaussians[k].cov = self.covs[k]
+
     def predict(self, samples: np.ndarray) -> np.ndarray:
         """For each sample predicts which component is most likely to have generated it
 
@@ -365,6 +361,12 @@ class ExpectationMaximisationGMM:
         samples_extent = samples.max(axis=0) - samples.min(axis=0)
         cov_init = np.diag(samples_extent)
         self.covs = np.stack(self.num_components * [cov_init], axis=0)
+        self.gmm = GMMSampler(
+            weights=self.weights,
+            gaussians=[
+                Gaussian(mean=mean, cov=cov) for mean, cov in zip(self.means, self.covs)
+            ],
+        )
 
     @cached_property
     def two_pi_root(self) -> float:

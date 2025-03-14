@@ -147,19 +147,20 @@ class ExpectationMaximisationGMM:
         if not self.is_initialised:
             self.initialise_params(samples)
 
-        upper_bound_t0 = -np.inf
+        log_likelihood_t0 = -np.inf
 
         for _ in tqdm(range(max_iter)):
-            log_posteriors = self.perform_e_step(samples)
-            self.perform_m_step(samples, log_posteriors)
-            self.update_gmm()
+            log_posteriors, log_px = self.perform_e_step(samples)
 
-            upper_bound_t1 = self.compute_upper_bound(samples, log_posteriors)
+            log_likelihood_t1 = log_px.sum()
 
-            if upper_bound_t1 - upper_bound_t0 < 1e-7:
+            if log_likelihood_t1 - log_likelihood_t0 < 1e-7:
                 break
 
-            upper_bound_t0 = upper_bound_t1
+            log_likelihood_t0 = log_likelihood_t1
+
+            self.perform_m_step(samples, log_posteriors)
+            self.update_gmm()
 
         self.__is_fitted = True
 
@@ -192,7 +193,7 @@ class ExpectationMaximisationGMM:
 
         return upper_bound_terms.sum()
 
-    def perform_e_step(self, samples: np.ndarray) -> np.ndarray:
+    def perform_e_step(self, samples: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         """Performs the E-Step in the expectation maximisation algorithm
         It consists in computing the posterior over the hidden variables
 
@@ -205,8 +206,10 @@ class ExpectationMaximisationGMM:
         Returns
         -------
         np.ndarray
-            P(h_i | x_i, theta^(t)), posteriors over all samples and components.
+            log P(h_i | x_i, theta^(t)), posteriors over all samples and components.
             Shape (N, K) where N is the number of samples and K the number of components
+        np.ndarray
+            log P(x_i) for all samples
         """
 
         return self.compute_log_posteriors(samples)
@@ -246,9 +249,11 @@ class ExpectationMaximisationGMM:
             Shape (N, K) indicatxing the posterior for each pair h_i
         """
 
-        return np.exp(self.compute_log_posteriors(samples))  # (N, K)
+        return np.exp(self.compute_log_posteriors(samples)[0])  # (N, K)
 
-    def compute_log_posteriors(self, samples: np.ndarray) -> np.ndarray:
+    def compute_log_posteriors(
+        self, samples: np.ndarray
+    ) -> tuple[np.ndarray, np.ndarray]:
         """Compute the log posterior log P(h_i | x_i)
 
         Parameters
@@ -258,8 +263,10 @@ class ExpectationMaximisationGMM:
 
         Returns
         -------
-        np.ndarray
+        log_posterior: np.ndarray
             Shape (N, K) indicatxing the log posterior for each pair h_i
+        log_evidence: np.ndarray
+            Shape (N,) indicatxing the log P(x) for each sample
         """
 
         log_pdfs = [
@@ -273,7 +280,7 @@ class ExpectationMaximisationGMM:
             np.sum(normalised_pdfs, axis=1, keepdims=True)
         )
 
-        return log_pdfs - log_sum_exp  # (N, K)
+        return log_pdfs - log_sum_exp, log_sum_exp[:, 0]
 
     def update_weights(self, unnormalized_weights: np.ndarray) -> None:
         """Update the GMM weights using the Maximum Likelihood formula"""

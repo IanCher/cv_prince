@@ -48,6 +48,7 @@ class FaceDataset:
         self.imgs_dir = imgs_dir
         self.params = params
         self.face_images: list[FaceImage] = []
+        self.num_folds = 0
         self.rng = np.random.default_rng(seed=self.seed)
 
         self.__read_face_dataset_information()
@@ -129,9 +130,13 @@ class FaceDataset:
         return image
 
     def __read_face_dataset_information(self) -> list[FaceImage]:
+        self.num_folds = 0
+
         for fold_ellipse_file in sorted(self.annotations_dir.glob("FDDB-fold-*")):
             if not fold_ellipse_file.name.endswith("ellipseList.txt"):
                 continue
+
+            self.num_folds += 1
 
             with open(fold_ellipse_file, "r", encoding="utf-8") as fid:
                 while True:

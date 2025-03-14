@@ -1,14 +1,19 @@
 """Run face detection experiments and store results"""
 
+from collections import defaultdict
 import os
 from pathlib import Path
 import sys
 import time
 import numpy as np
 from sklearn.model_selection import KFold
+from sklearn.metrics import roc_auc_score
 
 sys.path.insert(0, str(Path(__file__).parents[2]))
-from cv_prince.chap_07_complex_densities.gmm_face_detection import GMMFaceDetector
+from cv_prince.chap_07_complex_densities.gmm_face_detection import (
+    GMMFaceDetector,
+    GMMFaceDetectorParams,
+)
 from experiments.datasets.faces.dataset import FaceDataset, FaceLabel
 
 
@@ -25,55 +30,64 @@ def main():
     num_folds = face_dataset.num_folds
 
     fold_ids = np.arange(1, num_folds + 1)
-    outer_folds = KFold(n_splits=num_folds).split(fold_ids)
+    outer_folds = KFold(n_splits=5).split(fold_ids)
+
+    num_components = [3, 5, 10]
 
     for train_val_folds_idx, test_folds_idx in outer_folds:
         train_val_folds = fold_ids[train_val_folds_idx]
         test_folds = fold_ids[test_folds_idx]
 
         inner_folds = KFold(n_splits=5).split(train_val_folds)
-        test_fold_id = "_".join([str(fold) for fold in test_folds])
+
+        inner_aurocs = defaultdict(list)
 
         for train_folds_idx, val_folds_idx in inner_folds:
             train_folds = train_val_folds[train_folds_idx]
             val_folds = train_val_folds[val_folds_idx]
 
-            val_fold_id = "_".join([str(fold) for fold in val_folds])
             train_data, train_labels = face_dataset.get_data_from_folds(train_folds)
+            for num_component in num_components:
+                face_detector = GMMFaceDetector(
+                    GMMFaceDetectorParams(
+                        ncomponents_faces=num_component,
+                        ncomponents_others=num_component,
+                    )
+                )
+                face_detector.fit(train_data, train_labels)
 
-            face_detector_file = (
-                res_dir
-                / f"face_detector_valfolds_{val_fold_id}_testfolds_{test_fold_id}.pkl"
+                val_data, val_labels = face_dataset.get_data_from_folds(val_folds)
+                val_scores = face_detector.score(val_data)
+
+                inner_aurocs[num_component].append(
+                    roc_auc_score(val_labels == FaceLabel.face, val_scores)
+                )
+
+        mean_inner_aurocs = list(map(np.mean, inner_aurocs.values()))
+        best_model_id = np.argmax(mean_inner_aurocs)
+        best_num_components = num_components[best_model_id]
+        best_mean_auroc = mean_inner_aurocs[best_model_id]
+        best_std_auroc = np.std(inner_aurocs[best_num_components])
+        assert best_mean_auroc == np.mean(inner_aurocs[best_num_components])
+
+        train_data, train_labels = face_dataset.get_data_from_folds(train_val_folds)
+        face_detector = GMMFaceDetector(
+            GMMFaceDetectorParams(
+                ncomponents_faces=best_num_components,
+                ncomponents_others=best_num_components,
             )
-            start_time = time.time()
-            face_detector = GMMFaceDetector()
-            face_detector.fit(train_data, train_labels)
-            runtime = time.time() - start_time
-            # face_detector.save(face_detector_file)
+        )
+        face_detector.fit(train_data, train_labels)
+        test_data, test_labels = face_dataset.get_data_from_folds(test_folds)
+        test_scores = face_detector.score(test_data)
 
-            val_data, val_labels = face_dataset.get_data_from_folds(val_folds)
-            val_predicts = face_detector.predict(val_data)
+        test_auroc = roc_auc_score(test_labels == FaceLabel.face, test_scores)
 
-            confusion = val_labels == val_predicts
-            pos_loc = val_labels == FaceLabel.face
-            num_pos = pos_loc.sum()
-
-            neg_loc = val_labels == FaceLabel.other
-            num_neg = neg_loc.sum()
-
-            accuracy = confusion.sum() / len(val_data)
-            face_tpr = confusion[pos_loc].sum() / num_pos
-            face_tnr = confusion[neg_loc].sum() / num_neg
-            face_fpr = np.logical_not(confusion[neg_loc]).sum() / num_neg
-            face_fnr = np.logical_not(confusion[pos_loc]).sum() / num_pos
-
-            print("MINE")
-            print(runtime)
-            print(f"Accuracy = {accuracy:.2%}")
-            print(f"Face TPR = {face_tpr:.2%}")
-            print(f"Face TNR = {face_tnr:.2%}")
-            print(f"Face FPR = {face_fpr:.2%}")
-            print(f"Face FNR = {face_fnr:.2%}")
+        print(f"Best model (num components)  : {best_num_components}")
+        print(f"Best model (inner mean AUROC): {best_mean_auroc:.2%}")
+        print(f"Best model (inner std AUROC) : {best_std_auroc:.2%}")
+        print(f"Test AUROC (outer split)     : {test_auroc:.2%}")
+        print("==========================================================\n")
 
 
 if __name__ == "__main__":

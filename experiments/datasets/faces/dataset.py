@@ -26,7 +26,7 @@ class FaceDSParameters:
     other_selection_params = OtherSelectionParams(
         max_overlap=0.15,
         min_proportion=0.85,
-        num_instances=5,
+        num_instances=2,
         max_trials=100,
     )
 

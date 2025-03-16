@@ -7,7 +7,7 @@ from scipy.stats import multivariate_normal
 from cv_prince.chap_07_complex_densities.gaussians import Gaussian, GaussianParams
 
 
-@pytest.mark.parametrize("gauss_params", [1, 2, 5, 10], indirect=True)
+@pytest.mark.parametrize("samples", [1, 2, 5, 10], indirect=True)
 def test_pdf(gauss_params: GaussianParams, samples: np.ndarray):
     """Test if the custom Gaussian PDF generates same results as scipy"""
 

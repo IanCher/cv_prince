@@ -1,11 +1,15 @@
-from collections import defaultdict
+"""
+Classes to load and iterate over FDDB dataset
+https://people.cs.umass.edu/~elm/papers/fddb.pdf
+"""
+
+import itertools
 from dataclasses import dataclass
 from enum import Enum
-import itertools
 from pathlib import Path
-from PIL import Image
 
 import numpy as np
+from PIL import Image
 
 from experiments.datasets.faces.utils import (
     FaceAnnotation,
@@ -15,12 +19,16 @@ from experiments.datasets.faces.utils import (
 
 
 class FaceLabel(Enum):
-    other: int = 0
-    face: int = 1
+    """Labels for face detection"""
+
+    OTHER: int = 0
+    FACE: int = 1
 
 
 @dataclass
 class FaceDSParameters:
+    """Parameters for manipulating Face Datasets"""
+
     seed: int = 12345
     img_size: tuple[int, int] = (24, 24)
     other_selection_params = OtherSelectionParams(
@@ -29,6 +37,14 @@ class FaceDSParameters:
         num_instances=2,
         max_trials=100,
     )
+
+
+@dataclass
+class FaceDSDirectories:
+    """Directoris to access Face Dataset"""
+
+    annotations: Path
+    images: Path
 
 
 class FaceDataset:
@@ -44,19 +60,18 @@ class FaceDataset:
         params: FaceDSParameters = FaceDSParameters(),
     ):
 
-        self.annotations_dir = annotations_dir
-        self.imgs_dir = imgs_dir
+        self.dirs = FaceDSDirectories(annotations=annotations_dir, images=imgs_dir)
         self.params = params
         self.face_images: list[FaceImage] = []
-        self.num_folds = 0
         self.rng = np.random.default_rng(seed=self.seed)
 
         self.__read_face_dataset_information()
-        self.img_name_to_img_id = self.__img_name_to_img_id()
+        self.img_name_to_img_id = {
+            img.name: idx for idx, img in enumerate(self.face_images)
+        }
         self.idx_to_img_area_id = (
             self.__face_idx_to_img_area_id() + self.__other_idx_to_img_area_id()
         )
-
         self.fold_to_image_names = self.__fold_to_image_names()
 
     def __len__(self) -> int:
@@ -67,11 +82,26 @@ class FaceDataset:
         face_img = self.face_images[face_id]
 
         if idx < self.num_face_imgs:
-            return self.transform_image(face_img.crop_face_img(area_id)), FaceLabel.face
+            return self.transform_image(face_img.crop_face_img(area_id)), FaceLabel.FACE
 
-        return self.transform_image(face_img.crop_other_img(area_id)), FaceLabel.other
+        return self.transform_image(face_img.crop_other_img(area_id)), FaceLabel.OTHER
 
     def get_data_from_folds(self, folds: list[int]) -> tuple[np.ndarray, np.ndarray]:
+        """
+        Returns all images and corresponding labels contained in the requested folds
+
+        PARAMETERS
+        ----------
+        folds: list[int]
+            A list containing fold indices as defined in FDDB
+
+        RETURNS
+        -------
+        images: np.ndarray[float]
+            All images contained in folds, staked in an array of shape (N, D*D)
+        labels: np.ndarray[FaceLabels]
+            The labels corresponding to images, shape (N,)
+        """
         image_names = itertools.chain.from_iterable(
             [self.fold_to_image_names[fold_id] for fold_id in folds]
         )
@@ -104,24 +134,55 @@ class FaceDataset:
 
         data = np.concatenate([faces_arr, others_arr])
         labels = np.array(
-            num_faces_in_folds * [FaceLabel.face]
-            + num_others_in_folds * [FaceLabel.other]
+            num_faces_in_folds * [FaceLabel.FACE]
+            + num_others_in_folds * [FaceLabel.OTHER]
         )
 
         return data, labels
 
     def get_face_from_name(self, name: str) -> FaceImage:
+        """
+        Returns a FaceImage object corresponding to the image name defined in FDDB
+
+        PARAMETERS
+        ----------
+        name: str
+            The image name as defined in FDDB, typically '/2002/07/19/big/img_18'
+
+        RETURNS
+        -------
+        face_image: FaceImage
+            A FaceImage object that allows that contains the exact position of the faces
+            and allows to crop face on non face regions
+        """
         return self.face_images[self.img_name_to_img_id[name]]
 
     @property
     def num_face_imgs(self) -> int:
+        """The total number of faces that can be extracted from the FDDB"""
+
         return sum(map(lambda x: x.num_faces, self.face_images))
 
     @property
     def num_other_imgs(self) -> int:
+        """The total number of non faces that can be extracted from the FDDB"""
+
         return sum(map(lambda x: x.num_others, self.face_images))
 
     def transform_image(self, image: Image.Image) -> np.ndarray:
+        """Some transformations applied to the image before loading them
+
+        PARAMETERS
+        ----------
+        image: PIL Image
+            The image cropped from a FaceImage. Can be a face or other
+
+        RETURNS
+        -------
+        transformed_image: np.ndarray
+            Transformed image, ready for learning and predicting
+        """
+
         image = image.convert("L")
         image = image.resize(self.img_size)
         image = np.asarray(image, dtype=np.float64)
@@ -130,13 +191,11 @@ class FaceDataset:
         return image
 
     def __read_face_dataset_information(self) -> list[FaceImage]:
-        self.num_folds = 0
+        """Read the informations contained in FDDB files to create FaceImage objects"""
 
         for fold_ellipse_file in sorted(self.annotations_dir.glob("FDDB-fold-*")):
             if not fold_ellipse_file.name.endswith("ellipseList.txt"):
                 continue
-
-            self.num_folds += 1
 
             with open(fold_ellipse_file, "r", encoding="utf-8") as fid:
                 while True:
@@ -163,9 +222,6 @@ class FaceDataset:
                         rng=self.rng,
                     )
                     self.face_images.append(face_image)
-
-    def __img_name_to_img_id(self):
-        return {img.name: idx for idx, img in enumerate(self.face_images)}
 
     def __face_idx_to_img_area_id(self) -> list[tuple[int, int]]:
         return [
@@ -197,12 +253,33 @@ class FaceDataset:
 
     @property
     def seed(self) -> int:
+        """Get the random seed"""
+
         return self.params.seed
 
     @property
     def img_size(self) -> tuple[int, int]:
+        """Get the size of the crops we extract from FaceImages"""
+
         return self.params.img_size
 
     @property
     def other_selection_params(self):
+        """Access all the parameters used for cropping non face areas"""
+
         return self.params.other_selection_params
+
+    @property
+    def num_folds(self) -> int:
+        """Number of folds predefined in FDDB"""
+        return len(self.fold_to_image_names)
+
+    @property
+    def imgs_dir(self) -> Path:
+        """Access the image directory of FDDB"""
+        return self.dirs.images
+
+    @property
+    def annotations_dir(self) -> Path:
+        """Access the annotations directory of FDDB"""
+        return self.dirs.annotations

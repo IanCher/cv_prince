@@ -1,9 +1,11 @@
 """Scripts to run face detection experiments"""
 
+import pickle
 from dataclasses import dataclass
 from pathlib import Path
-import pickle
+
 import numpy as np
+
 from cv_prince.chap_07_complex_densities.gmm import (
     ExpectationMaximisationGMM,
     GMMSampler,
@@ -28,10 +30,10 @@ class GMMFaceDetector:
     def __init__(self, params: GMMFaceDetectorParams = GMMFaceDetectorParams):
         self.params = params
         self.em_estimators = {
-            FaceLabel.other: ExpectationMaximisationGMM(
+            FaceLabel.OTHER: ExpectationMaximisationGMM(
                 num_components=self.ncomponents_others, seed=self.seed
             ),
-            FaceLabel.face: ExpectationMaximisationGMM(
+            FaceLabel.FACE: ExpectationMaximisationGMM(
                 num_components=self.ncomponents_faces, seed=self.seed
             ),
         }
@@ -48,7 +50,7 @@ class GMMFaceDetector:
 
         faces_score = self.score(data)
 
-        return np.where(faces_score > self.thresh, FaceLabel.face, FaceLabel.other)
+        return np.where(faces_score > self.thresh, FaceLabel.FACE, FaceLabel.OTHER)
 
     def score(self, data: np.ndarray) -> np.ndarray:
         """Compute the score of the data representing a face"""
@@ -120,10 +122,10 @@ class GMMFaceDetector:
     def gmm_faces(self) -> GMMSampler:
         """Access gmm estimated for the faces"""
 
-        return self.em_estimators[FaceLabel.face].gmm
+        return self.em_estimators[FaceLabel.FACE].gmm
 
     @property
     def gmm_others(self) -> GMMSampler:
         """Access gmm estimated for the others"""
 
-        return self.em_estimators[FaceLabel.other].gmm
+        return self.em_estimators[FaceLabel.OTHER].gmm

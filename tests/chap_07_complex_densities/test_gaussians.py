@@ -1,8 +1,9 @@
 """Test functions related to the gaussian"""
 
-import pytest
 import numpy as np
+import pytest
 from scipy.stats import multivariate_normal
+
 from cv_prince.chap_07_complex_densities.gaussians import Gaussian, GaussianParams
 
 

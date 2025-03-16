@@ -12,6 +12,8 @@ from experiments.geometry.rectangles import Rectangle
 
 @dataclass
 class OtherSelectionParams:
+    """Parameters to define how we crop non face areas in FaceImage"""
+
     max_overlap: float = 0.15
     min_proportion: float = 0.8
     num_instances: int | None = None
@@ -20,6 +22,8 @@ class OtherSelectionParams:
 
 @dataclass
 class FaceAnnotation:
+    """Face Annotation parameters"""
+
     major_ax_radius: float
     minor_ax_radius: float
     angle: float
@@ -28,11 +32,15 @@ class FaceAnnotation:
 
     @classmethod
     def from_str(cls, datastr: str):
+        """Create a FaceAnnotation from data read in FDDB annotation files"""
+
         anno = [float(coord) for coord in datastr.split()[:-1]]
         return cls(*anno)
 
     @cached_property
-    def rot_mtx(self):
+    def rot_mtx(self) -> np.ndarray:
+        """Convert angles in rotation matrix"""
+
         return np.array(
             [
                 [np.cos(self.angle), -np.sin(self.angle)],
@@ -41,15 +49,27 @@ class FaceAnnotation:
         )
 
     @property
-    def center(self):
+    def center(self) -> np.ndarray:
+        """Access the center of the annotation as an array"""
+
         return np.array([self.center_x, self.center_y])
 
     @property
-    def radii(self):
+    def radii(self) -> np.ndarray:
+        """Access the major and minor radii of the ellipsis"""
+
         return np.array([self.major_ax_radius, self.minor_ax_radius])
 
     @property
-    def major_ax_bounds(self):
+    def major_ax_bounds(self) -> list[float]:
+        """Get the bounds coordinate on the major axis of the ellipsis
+        Useful for visualisation of the major axis
+
+        RETURNS
+        -------
+        bound_coordinates: list[float]
+            Form [top_bound_x, top_bound_y, bot_bound_x, bot_bound_y]
+        """
         major_bounds = np.tile(self.center[np.newaxis, :], (2, 1))
         major_bounds[0, 0] -= self.major_ax_radius
         major_bounds[1, 0] += self.major_ax_radius
@@ -58,6 +78,15 @@ class FaceAnnotation:
 
     @property
     def minor_ax_bounds(self):
+        """Get the bounds coordinate on the minor axis of the ellipsis
+        Useful for visualisation of the minor axis
+
+        RETURNS
+        -------
+        bound_coordinates: list[float]
+            Form [left_bound_x, left_bound_y, right_bound_x, right_bound_y]
+        """
+
         minor_bounds = np.tile(self.center[np.newaxis, :], (2, 1))
         minor_bounds[0, 1] -= self.minor_ax_radius
         minor_bounds[1, 1] += self.minor_ax_radius
@@ -66,6 +95,16 @@ class FaceAnnotation:
 
     @property
     def ellipsis_bbox(self):
+        """Access the coordinates the top left and bottom right corner of the rotated
+        ellipsis annotationg the face.
+        Useful for visualising the ellipsis around the face.
+
+        RETURNS
+        -------
+        bbox_corners: list[float]
+            [top_left_x, top_left_y, bot_right_x, bot_right_y]
+        """
+
         bbox_corners = np.tile(self.center[np.newaxis, :], (2, 1))
         bbox_corners[0, :] -= self.radii
         bbox_corners[1, :] += self.radii
@@ -73,6 +112,15 @@ class FaceAnnotation:
 
     @property
     def bbox(self):
+        """Access the upright bounding box containing annotated fac
+        Useful for croping the face
+
+        RETURNS
+        -------
+        bbox_corners: list[float]
+            [top_left_x, top_left_y, bot_right_x, bot_right_y]
+        """
+
         bbox_ellipsis_corners = np.tile(self.center[np.newaxis, :], (4, 1))
         bbox_ellipsis_corners[0, :] -= self.radii
         bbox_ellipsis_corners[1, :] += np.array(
@@ -91,8 +139,19 @@ class FaceAnnotation:
 
         return bbox_corners.flatten().tolist()
 
-    def __rotate(self, points: np.ndarray):
-        """points of shape (N, 2)"""
+    def __rotate(self, points: np.ndarray) -> np.ndarray:
+        """Rotate around the center of the ellipsis using the angle of the annotation
+
+        PARAMETERS
+        ----------
+        points: np.ndarray
+            shape (N, 2)
+
+        RETURNS
+        -------
+        rotated_points: np.ndarray
+            shape (N, 2)
+        """
 
         rotated = (points - self.center[np.newaxis, :]) @ self.rot_mtx.transpose()
         rotated += self.center[np.newaxis, :]
@@ -100,7 +159,24 @@ class FaceAnnotation:
 
 
 class FaceImage:
-    def __init__(
+    """Class to manipulate an image containing face annotations
+    Useful to crop faces and non faces areas.
+
+    PARAMETERS
+    ----------
+    file_path: Path
+        Path to the image file
+    face_annotations: list[FaceAnnotation]
+        List of parameters to all the annotated faces in the image
+    other_selection_params: OtherSelectionParams
+        Parameters used to define how to extract non face regions
+    rng: np.random.Generator | None [default, None]
+        Optional, a random number generator to use for random selections
+    seed: int | None [default, None]
+        Optional, a seed to define an rng if one is not provided
+    """
+
+    def __init__(  # pylint: disable=R0913, R0917
         self,
         file_path: Path,
         face_annotations: list[FaceAnnotation],
@@ -113,19 +189,34 @@ class FaceImage:
 
         self.face_annotations = face_annotations
         self.faces = self.__get_faces_areas()
-        self.num_faces = len(face_annotations)
 
         self.__rng = rng if rng is not None else np.random.default_rng(seed)
 
         self.other_selection_params = other_selection_params
         self.others = self.__get_others_areas()
-        self.num_others = len(self.others)
+
+    @property
+    def num_faces(self) -> int:
+        """Return the number of annotated faces in FaceImage"""
+
+        return len(self.face_annotations)
+
+    @property
+    def num_others(self) -> int:
+        """Return the number of non faces that can be extracted using
+        other_selection_params and the given RNG"""
+
+        return len(self.others)
 
     @property
     def name(self) -> str:
+        """Name of the face image, striped of the root file directory"""
+
         return "/".join(str(self.file_path).split("/")[-5:]).removesuffix(".jpg")
 
     def __get_faces_areas(self) -> list[Rectangle]:
+        """Get all the annotated faces bounding box"""
+
         img_w, img_h = self.size
 
         faces_areas = []
@@ -173,6 +264,9 @@ class FaceImage:
         return faces_areas
 
     def __get_others_areas(self) -> list[Rectangle]:
+        """Get all the non face areas bounding box obtained using the
+        other_selection_params and the provided rng."""
+
         img_w, img_h = self.size
 
         excluded_areas = [Rectangle(*face.bbox) for face in self.face_annotations]
@@ -221,9 +315,13 @@ class FaceImage:
                 return found_instances
 
     def read_image(self) -> Image.Image:
+        """Open the image"""
+
         return Image.open(self.file_path)
 
     def get_tallest_face(self) -> int:
+        """Find the tallest face annotated face and return its index"""
+
         tallest_face = 0
         tallest_face_id = None
 
@@ -238,18 +336,28 @@ class FaceImage:
         return tallest_face_id
 
     def crop_face_img(self, face_id: int) -> Image.Image:
+        """Crop the image around the bounding box of the face at index face_id"""
+
         return self.read_image().crop(astuple(self.faces[face_id]))
 
     def crop_all_faces_img(self) -> list[Image.Image]:
+        """Crop all the annotated faces"""
+
         return [self.crop_face_img(i) for i in range(self.num_faces)]
 
     def crop_other_img(self, other_id) -> list[Image.Image]:
+        """Crop a non face image at index other_id"""
+
         return self.read_image().crop(astuple(self.others[other_id]))
 
     def crop_all_others_img(self) -> list[Image.Image]:
+        """Crop all the non faces images"""
+
         return [self.crop_other_img(i) for i in range(self.num_others)]
 
-    def show_annotated_image(self):
+    def show_annotated_image(self) -> Image.Image:
+        """Returns a PIL image with all annotations drawn on it"""
+
         face_img = self.read_image().convert("RGBA")
         drawing = ImageDraw.Draw(face_img)
 

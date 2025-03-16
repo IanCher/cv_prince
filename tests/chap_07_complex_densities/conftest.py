@@ -1,5 +1,8 @@
-import pytest
+"""Configuration for the tests concerning chap07"""
+
 import numpy as np
+import pytest
+
 from cv_prince.chap_07_complex_densities.gaussians import GaussianParams
 
 

@@ -4,8 +4,10 @@ from dataclasses import dataclass
 from functools import cached_property
 from typing import Generator
 from warnings import warn
+
 import numpy as np
 from tqdm import tqdm
+
 from .gaussians import Gaussian
 
 
@@ -118,7 +120,7 @@ class GMMSampler:
         return log_weight + log_gauss_pdf
 
 
-class ExpectationMaximisationGMM:
+class ExpectationMaximisationGMM:  # pylint: disable=R0902
     """Object performing Expectation Maximisation in order to fit a GMM"""
 
     def __init__(self, num_components: int, seed: int | None = None):
@@ -395,6 +397,7 @@ class ExpectationMaximisationGMM:
 
     @property
     def is_initialised(self) -> bool:
+        """Checks whether the EM fitter has been initialised"""
         return self.ndims is not None
 
     def __str__(self):

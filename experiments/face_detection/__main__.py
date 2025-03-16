@@ -1,30 +1,29 @@
 """Run face detection experiments and store results"""
 
-from collections import defaultdict
 import os
-from pathlib import Path
 import sys
-import time
-import numpy as np
-from sklearn.model_selection import KFold
-from sklearn.metrics import roc_auc_score
+from collections import defaultdict
+from pathlib import Path
 
+import numpy as np
+from sklearn.metrics import roc_auc_score
+from sklearn.model_selection import KFold
+
+# pylint: disable=wrong-import-position
 sys.path.insert(0, str(Path(__file__).parents[2]))
-from cv_prince.chap_07_complex_densities.gmm_face_detection import (
+from cv_prince.chap_07_complex_densities.gmm_face_detection import (  # noqa E402
     GMMFaceDetector,
     GMMFaceDetectorParams,
 )
-from experiments.datasets.faces.dataset import FaceDataset, FaceLabel
+from experiments.datasets.faces.dataset import FaceDataset, FaceLabel  # noqa E402
 
 
-def main():
+def main():  # pylint: disable=R0914, C0116
     root_data_dir = Path(os.environ.get("DATASETS"))
-    root_res_dir = Path(os.environ.get("EXPERIMENTS"))
 
     data_dir = Path(root_data_dir) / "FDDB"
     faces_dir = data_dir / "originalPics"
     annotations_dir = data_dir / "FDDB-folds"
-    res_dir = root_res_dir / "cv_prince/chap_07_complex_densities/face_detection"
 
     face_dataset = FaceDataset(annotations_dir=annotations_dir, imgs_dir=faces_dir)
     num_folds = face_dataset.num_folds
@@ -60,7 +59,7 @@ def main():
                 val_scores = face_detector.score(val_data)
 
                 inner_aurocs[num_component].append(
-                    roc_auc_score(val_labels == FaceLabel.face, val_scores)
+                    roc_auc_score(val_labels == FaceLabel.FACE, val_scores)
                 )
 
         mean_inner_aurocs = list(map(np.mean, inner_aurocs.values()))
@@ -81,7 +80,7 @@ def main():
         test_data, test_labels = face_dataset.get_data_from_folds(test_folds)
         test_scores = face_detector.score(test_data)
 
-        test_auroc = roc_auc_score(test_labels == FaceLabel.face, test_scores)
+        test_auroc = roc_auc_score(test_labels == FaceLabel.FACE, test_scores)
 
         print(f"Best model (num components)  : {best_num_components}")
         print(f"Best model (inner mean AUROC): {best_mean_auroc:.2%}")

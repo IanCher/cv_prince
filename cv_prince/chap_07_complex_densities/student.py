@@ -1,6 +1,7 @@
 """Contains scripts related to the estimation of student t distributions"""
 
 import warnings
+
 import numpy as np
 import scipy.optimize
 import scipy.special

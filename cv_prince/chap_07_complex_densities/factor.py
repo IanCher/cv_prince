@@ -96,9 +96,10 @@ class ExpectationMaximisationFactor:
         num_samples = samples.shape[0]
         self.dim = samples.shape[1]
 
-        assert (
-            self.dim > self.num_factors
-        ), f"Looking for {self.num_factors} factors, but there are only {self.dim} dimensions"
+        assert self.dim > self.num_factors, (
+            f"Looking for {self.num_factors} factors, "
+            f"but there are only {self.dim} dimensions"
+        )
 
         # We estimate the maximum likelihood mean for a gaussian
         self.mean = 1 / num_samples * samples.sum(axis=0)

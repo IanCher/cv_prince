@@ -2,8 +2,9 @@
 
 # pylint: disable=c0103
 
-from pathlib import Path
 import sys
+from pathlib import Path
+
 import numpy as np
 from scipy.optimize import minimize_scalar
 

@@ -1,4 +1,4 @@
-"""Base class for defining regression methods"""
+"""This folder implements methods from chapter 8"""
 
 # pylint: disable=c0103
 
@@ -8,6 +8,7 @@ import numpy as np
 
 
 class BaseRegression(ABC):
+    """Base class for running regression methods"""
 
     @abstractmethod
     def fit(self, X: np.ndarray, w: np.ndarray):

@@ -1,8 +1,9 @@
 """Implementations of paragraph 8.3"""
 
 # pylint: disable=c0103
-from pathlib import Path
 import sys
+from pathlib import Path
+
 import numpy as np
 
 # pylint: disable=wrong-import-position

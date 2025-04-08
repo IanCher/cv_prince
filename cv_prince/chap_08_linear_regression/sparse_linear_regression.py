@@ -2,8 +2,10 @@
 
 # pylint: disable=c0103
 
-from pathlib import Path
 import sys
+from dataclasses import dataclass
+from pathlib import Path
+
 import numpy as np
 from scipy.optimize import minimize_scalar
 from tqdm import tqdm
@@ -15,13 +17,20 @@ if str(Path(__file__).parents[2]) not in sys.path:
 from cv_prince.chap_08_linear_regression import BaseRegression
 
 
+@dataclass
+class SparseLinRegParams:
+    """Parameters for running relevance vector regression"""
+
+    nu: float
+    thresh: float
+    niter: int = 1000
+
+
 class SparseLinearRegression(BaseRegression):
     """Sparse Linear Regression using Student t distribution prior"""
 
-    def __init__(self, nu: float, thresh: float, niter: int = 1000):
-        self.nu = nu
-        self.thresh = thresh
-        self.niter = niter
+    def __init__(self, params: SparseLinRegParams):
+        self.params = params
         self.hidden_vars: np.ndarray | None = None
         self.sigma: float | None = None
         self.post_cov: np.ndarray | None = None
@@ -97,3 +106,15 @@ class SparseLinearRegression(BaseRegression):
         log_likelihood *= -0.5
 
         return log_likelihood
+
+    @property
+    def nu(self) -> float:  # pylint: disable=c0116
+        return self.params.nu
+
+    @property
+    def thresh(self) -> float:  # pylint: disable=c0116
+        return self.params.thresh
+
+    @property
+    def niter(self) -> int:  # pylint: disable=c0116
+        return self.params.niter

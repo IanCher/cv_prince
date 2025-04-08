@@ -1,8 +1,9 @@
 """All methods related to linear regression using maximum likelihood"""
 
 # pylint: disable=c0103
-from pathlib import Path
 import sys
+from pathlib import Path
+
 import numpy as np
 
 # pylint: disable=wrong-import-position

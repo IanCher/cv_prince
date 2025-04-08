@@ -2,8 +2,10 @@
 
 # pylint: disable=c0103
 
-from pathlib import Path
 import sys
+from dataclasses import dataclass
+from pathlib import Path
+
 import numpy as np
 from scipy.optimize import minimize_scalar
 
@@ -15,22 +17,27 @@ from cv_prince.chap_08_linear_regression import BaseRegression
 from cv_prince.chap_08_linear_regression.kernels import radial_basis_func
 
 
+@dataclass
+class RVRegressionParams:
+    """Parameters for running relevance vector regression"""
+
+    nu: float
+    lam: float
+    thresh: float
+    niter: int = 1000
+
+
 class RelevanceVectorRegression(BaseRegression):
     """Fits and applies relevance vector regression model
     (non linear sparse bayesian regression with RBF)"""
 
-    def __init__(self, nu: float, lam: float, thresh: float, niter: int = 1000):
-        self.nu = nu
-        self.lam = lam
-        self.thresh = thresh
-        self.niter = niter
+    def __init__(self, params: RVRegressionParams):
+        self.params = params
         self.hidden_vars: np.ndarray | None = None
         self.sigma: float | None = None
         self.intermediate_post_cov: np.ndarray | None = None
         self.intermediate_post_mean: np.ndarray | None = None
-        self.tokeep: np.ndarray | None = None
         self.training_data: np.ndarray | None = None
-        self.training_obs: np.ndarray | None = None
 
     def fit(self, X, w):
 
@@ -71,16 +78,15 @@ class RelevanceVectorRegression(BaseRegression):
             if np.allclose(hprev, self.hidden_vars):
                 break
 
-        self.tokeep = self.hidden_vars < self.thresh
-        self.training_data = X[:, self.tokeep]
-        self.training_obs = w[self.tokeep]
+        tokeep = self.hidden_vars < self.thresh
 
+        self.training_data = X[:, tokeep]
         KXX_red = self.__kernel(self.training_data, self.training_data)
         KXX_sq_red = KXX_red @ KXX_red
 
-        A_red = 1 / self.sigma * KXX_sq_red + np.diag(self.hidden_vars[self.tokeep])
+        A_red = 1 / self.sigma * KXX_sq_red + np.diag(self.hidden_vars[tokeep])
 
-        self.intermediate_post_mean = KXX_red @ w[self.tokeep]
+        self.intermediate_post_mean = KXX_red @ w[tokeep]
         self.intermediate_post_cov = np.linalg.inv(A_red)
 
     def predict(self, X):
@@ -110,3 +116,19 @@ class RelevanceVectorRegression(BaseRegression):
         self, array_1: np.ndarray, array_2: np.ndarray, along_sample_axis: bool = False
     ) -> np.ndarray:
         return radial_basis_func(array_1, array_2, self.lam, along_sample_axis)
+
+    @property
+    def nu(self):  # pylint: disable=c0116
+        return self.params.nu
+
+    @property
+    def lam(self):  # pylint: disable=c0116
+        return self.params.lam
+
+    @property
+    def thresh(self):  # pylint: disable=c0116
+        return self.params.thresh
+
+    @property
+    def niter(self):  # pylint: disable=c0116
+        return self.params.niter
